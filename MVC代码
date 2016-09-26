@@ -1,0 +1,648 @@
+using System;
+
+
+namespace SocialPoint.Examples.MVC
+{
+    public class PlayerModel
+    {   
+        public PlayerModel()
+        {
+            XP = 0;
+            Level = 1;
+            HitPoints = MaxHitPoints;
+        }
+
+        public event EventHandler XPGained;
+        public event EventHandler LevelUp;
+        public event EventHandler DamageTaken;
+        public event EventHandler Died;
+
+        int _hitPoints;
+        public int HitPoints 
+        {
+            get 
+            {
+                return _hitPoints;
+            }
+            set
+            {
+                var oldValue = _hitPoints;
+                _hitPoints = value;
+
+                if (_hitPoints < 0)
+                {
+                    _hitPoints = 0;
+                }
+
+                if (oldValue != _hitPoints)
+                {
+                    if (DamageTaken != null) DamageTaken(this, EventArgs.Empty);
+                    if (IsDead) 
+                    {
+                        if (Died != null) Died(this, EventArgs.Empty);
+                    }
+                }
+            }
+        }
+
+        public int Level { get; private set;}
+
+        public int XP {get; private set;}
+
+        public int MaxHitPoints 
+        {
+            get { return Level * 150; }
+        }
+        
+        public bool HasLowHitPoints
+        {
+            get { return HitPoints <= MaxHitPoints * 0.25f; }
+        }
+
+        public bool IsDead
+        {
+            get { return HitPoints <= 0;}
+        }
+
+        public void TakeDamage(int hpDamage)
+        {
+            if (IsDead) return;
+
+            HitPoints -= hpDamage;
+        }
+
+        public void AddXp(int amount)
+        {
+            if (IsDead) return;
+
+            XP += amount; 
+
+            OnPlayerXPGained();
+
+            if (XP >= (100 * Level))
+            {
+                OnPlayerLevelUp();
+            }
+        }
+
+        protected virtual void OnPlayerLevelUp()
+        {
+            Level++;
+            HitPoints = MaxHitPoints;
+
+            if (LevelUp != null) LevelUp(this, EventArgs.Empty);
+        }
+
+        protected virtual void OnPlayerXPGained()
+        {
+            if (XPGained != null) XPGained(this, EventArgs.Empty);
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+using System;
+using UnityEngine;
+
+namespace SocialPoint.Examples.MVC
+{
+    public class PlayerController
+    {
+        PlayerModel Player {get;set;}
+
+        MainGUIViewPresenter MainGUI {get;set;}
+
+       
+        public PlayerController()
+        {
+            MainGUI = CreateView("MainGUI").GetComponent<MainGUIViewPresenter>();
+
+            MainGUI.AddXpButton.Clicked += (s, e) => Player.AddXp(50);
+            MainGUI.AddXpButton.Clicked += (s, e) => Debug.Log("Adding XP points");
+
+            MainGUI.TakeDamageButton.Clicked += (s, e) => Player.TakeDamage(75);
+            MainGUI.TakeDamageButton.Clicked += (s, e) => Debug.Log("Player took damage!");
+
+            Player = new PlayerModel();
+            Player.XPGained += OnPlayerGainedXP;
+            Player.LevelUp += OnPlayerLevelUp;
+            Player.LevelUp += (s,e) => Debug.Log("Player leveled up!");
+            Player.DamageTaken += OnDamageTaken;
+
+
+            Player.DamageTaken += (sender, e) => Debug.Log("Damage taken");
+
+            Player.Died += (s, e) => UpdatePlayerDeadUI();
+            Player.Died += (s, e) => Debug.Log("Player is dead");
+
+            UpdateLevelAndXPUI();
+            UpdateHitPointsUI();
+
+        }
+
+
+        void UpdateHitPointsUI()
+        {
+            MainGUI.HitPointsLabel.Text = "Hit Points " + Player.HitPoints;
+            if (Player.HasLowHitPoints)
+            {
+                MainGUI.HitPointsLabel.TextColor = UnityEngine.Color.yellow;
+            }
+            else
+            {
+                MainGUI.HitPointsLabel.TextColor = UnityEngine.Color.white;
+            }
+        }
+
+        void UpdateLevelAndXPUI()
+        {
+            MainGUI.XpLabel.Text = "Experience: " + Player.XP;
+            MainGUI.LevelLabel.Text = "Level " + Player.Level;
+        }
+
+        void UpdatePlayerDeadUI()
+        {
+            MainGUI.HitPointsLabel.Text = "Dead";
+            MainGUI.HitPointsLabel.TextColor = UnityEngine.Color.red;
+        }
+
+        public void ShowView()
+        {
+            MainGUI.Show();
+        }
+
+        public void HideView()
+        {
+            MainGUI.Hide();
+        }
+
+        public void OnPlayerGainedXP(object sender, EventArgs args)
+        {
+            UpdateLevelAndXPUI();
+        }
+
+        public void OnDamageTaken(object sender, EventArgs args)
+        {
+            UpdateHitPointsUI();
+        }
+
+
+        public void OnPlayerLevelUp(object sender, EventArgs args)
+        {
+            UpdateLevelAndXPUI();
+            UpdateHitPointsUI();
+        } 
+        
+        GameObject CreateView(string viewName)
+        { 
+            // Loads the prefab with the view and instantiates it inside the View hierarchy
+            return GameObject.Find("MainGUI");
+        }
+    }
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+namespace SocialPoint.Examples.MVC
+{
+
+    public class LabelViewPresenter : ViewPresenter
+    {
+        public UILabel TextLabel;
+
+        public string Text
+        {
+            get { return TextLabel.text; }
+            set { TextLabel.text = value; }
+        }
+
+        public UnityEngine.Color TextColor
+        {
+            get{ return TextLabel.color; }
+            set { TextLabel.color = value; }
+        }
+    }
+}
+
+
+
+
+
+
+using System;
+using System.Configuration;
+using UnityEngine;
+
+namespace SocialPoint.Examples.MVC
+{
+    public class ButtonPresenterEventArgs : System.EventArgs
+    {
+        public Vector3 MousePosition {get;private set;}
+
+        public ButtonPresenterEventArgs(Vector2 mousePosition)
+        {
+            MousePosition = mousePosition;
+        }
+
+    }
+
+    /// <summary>
+    ///     View Presenter for a button with a label
+    /// </summary>
+    public class ButtonViewPresenter : ViewPresenter
+    {
+        Color _buttonOriginalHoverColor;
+        Color _buttonOriginalDefaultColor;
+
+        public UIButton Button;
+        public UILabel ButtonLabel;
+        public UITexture ButtonImage;
+
+        public string Text
+        {
+            get
+            {
+                return ButtonLabel != null ? ButtonLabel.text : string.Empty;
+            }
+            set
+            {
+                if(ButtonLabel == null)
+                {
+                    return;
+                }
+                ButtonLabel.text = value;
+            }
+        }
+
+        public Texture ImageSprite
+        {
+            get
+            {
+                return ButtonImage != null ? ButtonImage.mainTexture : null;
+            }
+
+            set
+            {
+                if(ButtonImage == null)
+                {
+                    return;
+                }
+
+                ButtonImage.mainTexture = value;
+            }
+        }
+
+        /// <summary>
+        ///     This will allow to keep track of the status of the button in order to disable
+        ///     the events if the button is disabled
+        /// </summary>
+        public bool IsEnabled
+        {
+            get;
+            private set;
+
+        }
+
+        public override void Enable()
+        {
+            IsEnabled = true;
+            Button.defaultColor = _buttonOriginalDefaultColor;
+            Button.hover = _buttonOriginalHoverColor;
+            Button.UpdateColor (IsEnabled);
+            //Button.UpdateColor(IsEnabled, false);
+        }
+
+        public override void Disable()
+        {
+            IsEnabled = false;
+            Button.defaultColor = Button.disabledColor;
+            Button.hover = Button.disabledColor;
+            Button.UpdateColor(IsEnabled);
+        }
+
+        public event EventHandler<ButtonPresenterEventArgs> Clicked;
+
+        protected virtual void OnButtonClicked()
+        {
+            // Do not propagate the click event if the button is disabled
+            if(!IsEnabled)
+            {
+                return;
+            }
+
+            if(Clicked != null)
+            {
+                Clicked(this, new ButtonPresenterEventArgs(Input.mousePosition));
+            }
+        }
+
+        protected override void AwakeUnityMsg()
+        {
+            base.AwakeUnityMsg();
+
+            WireUIEvents();
+
+            IsEnabled = Button.isEnabled;
+
+            _buttonOriginalDefaultColor = Button.defaultColor;
+            _buttonOriginalHoverColor = Button.hover;
+        }
+
+        protected virtual void WireUIEvents()
+        {
+            // Programatically add the onClick handler if it is not set
+            // so the ButtonClicked event is always called (NGUI specific)
+            if(Button.onClick.Count <= 0)
+            {
+                Button.onClick.Add(new EventDelegate(this, "OnButtonClicked"));
+            }
+        }
+    }
+
+
+}
+
+
+
+
+
+
+
+
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using UnityEngine;
+
+namespace SocialPoint.Examples.MVC
+{
+    [ExecuteInEditMode]//编辑器扩展
+    public class ViewPresenter : MonoBehaviour
+    {
+
+        protected virtual UIRect ViewRoot { get; set; }    
+
+        public event EventHandler ViewDidHide;
+        public event EventHandler ViewDidShow;
+
+
+        #region Unity3D messages
+        void Awake()
+        {
+
+            // This will allow to set the view in the inspector if we want to
+            ViewRoot = ViewRoot ?? GetComponent<UIRect>();
+
+            // Set the alpha to cero so the item is created
+            // invisible. When the show method is called
+            // the view will be made visible using a transition.
+#if UNITY_EDITOR
+            if (UnityEditor.EditorApplication.isPlaying)
+                UpdateAlpha(0);
+#else
+            ViewRoot.alpha = 0f;
+#endif
+
+            AwakeUnityMsg();
+        }
+
+        void Start()
+        {
+            StartUnityMsg();
+        }
+
+        void OnValidate()
+        {
+            AutoPopulateDeclaredWidgets();
+
+            OnValidateUnityMsg();
+        }
+
+        void OnDestroy()
+        {
+            OnDestroyUnityMsg();
+        }
+        #endregion
+
+        #region Unity3D Messages propagation
+        protected virtual void AwakeUnityMsg()
+        {
+        }
+
+        protected virtual void StartUnityMsg()
+        {
+        }
+
+        protected virtual void OnValidateUnityMsg()
+        {
+        }
+
+        protected virtual void OnDestroyUnityMsg()
+        {
+        }
+        #endregion
+
+        #region Autopopulate widgets
+        [ContextMenu("Auto populate widgets")]
+        public void AutoPopulateDeclaredWidgetsContextMenu()
+        {
+            AutoPopulateDeclaredWidgets();
+        }
+
+        /// <summary>
+        ///     This matches the widgets found in the prefab this MB is attached to
+        ///     with the properties defined in this file, so we can keep a reference
+        ///     to them.
+        ///     We use the following rules to do the matching:
+        ///     GameObject's name == Property Name
+        ///     GameObjects widget component type == Property type
+        /// </summary>
+        void AutoPopulateDeclaredWidgets()
+        {
+            foreach(var nguiWidget in GetDeclaredUIWidgets())
+            {
+                var childTransform = GetChildRecursive(transform, nguiWidget.Name);
+                if(childTransform == null)
+                {
+                    continue;
+                }
+                
+                if(nguiWidget.GetValue(this) == null)
+                {
+                    nguiWidget.SetValue(this, childTransform.GetComponent(nguiWidget.FieldType));
+                }
+            }
+        }
+
+        /// <summary>
+        ///    Finds all properties that derive from UIWidgets or UIWidgetContainers
+        ///    in this object
+        /// </summary>
+        /// <returns>The declared user interface widgets.</returns>
+        IEnumerable<FieldInfo> GetDeclaredUIWidgets()
+        {
+            return this.GetType().GetFields(BindingFlags.Public | BindingFlags.FlattenHierarchy | BindingFlags.Instance).Where(
+                m => typeof(UIWidget).IsAssignableFrom(m.FieldType)
+                || typeof(UIWidgetContainer).IsAssignableFrom(m.FieldType));
+        }
+
+
+        #endregion
+
+        public virtual void Enable()
+        {
+            ViewRoot.enabled = true;
+        }
+
+        public virtual void Disable()
+        {
+            ViewRoot.enabled = false;
+        }
+
+ 
+
+        public virtual void Show()
+        {
+            UpdateAlpha(1f);
+
+            if(ViewDidShow != null)
+            {
+                ViewDidShow(this, EventArgs.Empty);
+            }
+        }
+
+        public virtual void Hide()
+        {
+            UpdateAlpha(0);
+
+            if(ViewDidHide != null)
+            {
+                ViewDidHide(this, EventArgs.Empty);
+            }
+        }
+
+
+        public static Transform GetChildRecursive(Transform trans, string name)
+        {
+            Component[] transforms = trans.GetComponentsInChildren( typeof( Transform ), true );
+            
+            foreach( Transform atrans in transforms )
+            {
+                if( atrans.name == name )
+                {
+                    return atrans;
+                }
+            }
+            return null;
+        }
+
+        protected void UpdateAlpha(float value)
+        {
+            ViewRoot.alpha = value;
+        }
+
+    }
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+namespace SocialPoint.Examples.MVC
+{
+
+    public class MainGUIViewPresenter : ViewPresenter
+    {
+        public ButtonViewPresenter AddXpButton;
+        public ButtonViewPresenter TakeDamageButton;
+
+        public LabelViewPresenter HitPointsLabel;
+        public LabelViewPresenter XpLabel;
+        public LabelViewPresenter LevelLabel;
+
+        public override void Show()
+        {
+            AddXpButton.Show();
+            XpLabel.Show();
+            LevelLabel.Show();
+            HitPointsLabel.Show();
+            TakeDamageButton.Show();
+
+            base.Show();
+        }
+
+        public override void Hide()
+        {
+            AddXpButton.Hide();
+            XpLabel.Hide();
+            LevelLabel.Hide();
+            HitPointsLabel.Hide();
+            TakeDamageButton.Hide();
+
+            base.Hide();
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+using UnityEngine;
+
+namespace SocialPoint.Examples.MVC
+{
+    public class MainInitialicer : MonoBehaviour 
+    {
+        PlayerController Controller;
+
+        void Start()
+        {
+            Controller = new PlayerController();
+
+            Controller.ShowView();
+        }
+    }
+}
